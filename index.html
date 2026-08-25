@@ -3,11 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>로스쿨 배수 기록 (실시간 연동)</title>
+<title>로스쿨 배수 기록 (보안 로그인)</title>
 
-<!-- Firebase SDK 스크립트 불러오기 -->
+<!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 
 <style>
 *{box-sizing:border-box}
@@ -24,7 +25,6 @@ th,td{padding:10px 8px;border-bottom:1px solid #eee;text-align:center;font-size:
 th:first-child,td:first-child{text-align:left}
 th{font-size:12.5px;color:#6b7280;background:#f9fafb}
 input,select{padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;width:100%;-webkit-appearance:none;appearance:none;background:#fff}
-input[type="date"]{-webkit-appearance:listbox}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
 .primary{background:#111827;color:#fff}
 .danger{background:#fee2e2;color:#991b1b}
@@ -35,14 +35,14 @@ input[type="date"]{-webkit-appearance:listbox}
 .change-up{color:#dc2626;font-weight:700}
 .change-down{color:#2563eb;font-weight:700}
 .change-same{color:#6b7280}
-.chart-card{margin-bottom:20px}
 .chart-container{position:relative;width:100%;margin-top:10px}
 canvas{width:100%;height:260px;border:1px solid #eee;border-radius:10px;background:#fff;display:block}
 .chart-tooltip{position:absolute;display:none;padding:6px 10px;background:rgba(17,24,39,0.85);color:#fff;font-size:12px;border-radius:6px;pointer-events:none;white-space:nowrap;z-index:10;transform:translate(-50%,-120%);box-shadow:0 2px 4px rgba(0,0,0,0.2)}
 .checkbox-label{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:14px;user-select:none}
-.checkbox-label input[type="checkbox"]{width:18px;height:18px;cursor:pointer;-webkit-appearance:checkbox;appearance:checkbox}
 .sync-status{font-size:12px;padding:4px 8px;border-radius:12px;background:#e5e7eb;color:#374151;font-weight:bold}
 .sync-status.online{background:#dcfce7;color:#15803d}
+.login-box{text-align:center;padding:40px 20px}
+.login-btn{background:#4285f4;color:#fff;font-size:15px;padding:12px 24px;border-radius:8px;font-weight:bold}
 
 @media(max-width:650px){
   .wrap{padding:16px 10px}
@@ -57,8 +57,18 @@ canvas{width:100%;height:260px;border:1px solid #eee;border-radius:10px;backgrou
 <h1>로스쿨 배수 기록</h1>
 <div class="sub">
   <span>오늘 입력 · 날짜별 기록 · 배수 변화 · 그래프</span>
-  <span id="syncStatus" class="sync-status">클라우드 동기화 중...</span>
+  <span id="syncStatus" class="sync-status">로그인 필요</span>
 </div>
+
+<!-- 로그인 화면 -->
+<div id="loginSection" class="card login-box">
+  <h2>보안 로그인</h2>
+  <p class="muted" style="margin-bottom:20px">승인된 본인 계정으로 로그인해야 데이터를 조회/수정할 수 있습니다.</p>
+  <button class="login-btn" onclick="googleLogin()">Google 계정으로 로그인</button>
+</div>
+
+<!-- 로그인 후 표시될 메인 영역 -->
+<div id="mainSection" class="hidden">
 <nav>
 <button class="tab active" data-tab="input">오늘 입력</button>
 <button class="tab" data-tab="history">기록 조회</button>
@@ -66,6 +76,7 @@ canvas{width:100%;height:260px;border:1px solid #eee;border-radius:10px;backgrou
 <button class="tab" data-tab="chart">그래프</button>
 <button class="tab" data-tab="manage">기록 관리</button>
 <button class="tab" data-tab="recruit">모집인원</button>
+<button onclick="googleLogout()" style="margin-left:auto;background:#f3f4f6;color:#6b7280;">로그아웃</button>
 </nav>
 
 <section id="input" class="section">
@@ -89,14 +100,14 @@ canvas{width:100%;height:260px;border:1px solid #eee;border-radius:10px;backgrou
 <div class="card">
   <h2>전날 대비 배수 변화</h2>
   <div id="changeBox" style="margin-top:10px"></div>
-  <p class="muted" style="margin-top:12px">※ 이전 기록 날짜 대비 배수 변화 수치입니다. (↑ : 배수 상승 / ↓ : 배수 하락)</p>
+  <p class="muted" style="margin-top:12px">※ 이전 기록 날짜 대비 배수 변화 수치입니다.</p>
 </div>
 </section>
 
 <section id="chart" class="section hidden">
 <div class="card" style="margin-bottom:16px">
   <h2>전체 학교 배수 변화 그래프</h2>
-  <div class="muted">사용하도록 체크된 학교의 배수 추이를 한눈에 확인하세요.</div>
+  <div class="muted">사용하도록 체크된 학교의 배수 추이를 확인하세요.</div>
 </div>
 <div id="allChartsContainer"></div>
 </section>
@@ -104,7 +115,6 @@ canvas{width:100%;height:260px;border:1px solid #eee;border-radius:10px;backgrou
 <section id="manage" class="section hidden">
 <div class="card">
   <h2>기록 관리</h2>
-  <div class="muted" style="margin-bottom:10px">조회 및 수정할 날짜를 선택 후 등수를 수정한 뒤 하단의 [전체 저장]을 눌러주세요. 완전히 지우려면 0을 입력하세요.</div>
   <input type="date" id="manageDate" onchange="renderManage()">
   <div id="manageBox" style="margin-top:16px"></div>
   <div class="actions" style="margin-top:16px">
@@ -114,7 +124,6 @@ canvas{width:100%;height:260px;border:1px solid #eee;border-radius:10px;backgrou
 </div>
 <div class="card" style="margin-top:20px">
   <h3>사용 학교 선택</h3>
-  <div class="muted" style="margin-bottom:12px">체크를 해제하면 모든 탭에서 해당 학교가 숨겨집니다. (기존 데이터는 삭제되지 않고 안전하게 보존됩니다)</div>
   <div id="schoolManageBox"></div>
 </div>
 </section>
@@ -129,9 +138,9 @@ canvas{width:100%;height:260px;border:1px solid #eee;border-radius:10px;backgrou
 </div>
 </section>
 </div>
+</div>
 
 <script>
-// Firebase 키 입력 완료
 const firebaseConfig = {
   apiKey: "AIzaSyB_bLvYR7VpAtWX4xmnSUyWynEmNjZtquo",
   authDomain: "lawschool-847c7.firebaseapp.com",
@@ -141,9 +150,9 @@ const firebaseConfig = {
   appId: "1:220845841979:web:4254deed11bfb76963061e"
 };
 
-// Firebase 초기화
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+const auth = firebase.auth();
 
 const DEFAULT_SCHOOLS = ["원광대","동아대","영남대","부산대","경북대","전남대"];
 const RECRUIT = {원광대:{가:30,나:25},동아대:{가:37,나:37},영남대:{가:32,나:33},부산대:{가:55,나:56},경북대:{가:55,나:56},전남대:{가:51,나:60}};
@@ -153,7 +162,30 @@ let records = {};
 let activeSchools = [...DEFAULT_SCHOOLS];
 let chartPointsMap = {};
 
-// 클라우드 데이터 실시간 동기화
+function googleLogin() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider).catch(err => alert("로그인 오류: " + err.message));
+}
+
+function googleLogout() {
+  auth.signOut().then(() => location.reload());
+}
+
+auth.onAuthStateChanged(user => {
+  if (user) {
+    document.getElementById("loginSection").classList.add("hidden");
+    document.getElementById("mainSection").classList.remove("hidden");
+    document.getElementById("syncStatus").textContent = "● " + user.displayName + " 연동됨";
+    document.getElementById("syncStatus").classList.add("online");
+    initRealtimeSync();
+  } else {
+    document.getElementById("loginSection").classList.remove("hidden");
+    document.getElementById("mainSection").classList.add("hidden");
+    document.getElementById("syncStatus").textContent = "로그인 필요";
+    document.getElementById("syncStatus").classList.remove("online");
+  }
+});
+
 function initRealtimeSync() {
   db.collection("lawschool").doc("mainData")
     .onSnapshot((doc) => {
@@ -162,28 +194,22 @@ function initRealtimeSync() {
         records = data.records || {};
         activeSchools = data.activeSchools || [...DEFAULT_SCHOOLS];
       }
-      document.getElementById("syncStatus").textContent = "● 클라우드 연동됨";
-      document.getElementById("syncStatus").classList.add("online");
       renderAll();
     }, (error) => {
       console.error("Sync error:", error);
-      document.getElementById("syncStatus").textContent = "연동 실패";
+      alert("데이터를 가져올 권한이 없습니다. Firebase 보안 규칙의 이메일 설정을 확인하세요.");
     });
 }
 
 function getTodayKST() {
   const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const date = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${date}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 const today = () => getTodayKST();
 const fmt = d => { if(!d) return ""; const [y,m,dd] = d.split("-"); return `${y}.${m}.${dd}`; };
 const round1 = x => Math.round((x + Number.EPSILON) * 10) / 10;
 
-// 클라우드 저장
 function save() {
   db.collection("lawschool").doc("mainData").set({
     records: records,
@@ -195,7 +221,6 @@ function getRec(d, s, g) { return records[d]?.[s]?.[g] ?? null; }
 
 function setRec(d, s, g, rankVal, isForceDelete = false) {
   if (rankVal === "" || rankVal === null || rankVal === undefined) return;
-  
   if (!records[d]) records[d] = {};
   if (!records[d][s]) records[d][s] = {};
   
@@ -215,9 +240,7 @@ function prevDate(d) {
   return ds.length > 0 ? ds[ds.length - 1] : null;
 }
 
-function getDisplaySchools() {
-  return DEFAULT_SCHOOLS.filter(s => activeSchools.includes(s));
-}
+function getDisplaySchools() { return DEFAULT_SCHOOLS.filter(s => activeSchools.includes(s)); }
 
 function renderInput() {
   document.getElementById("todayDateLabel").textContent = fmt(today());
@@ -237,12 +260,9 @@ function saveToday() {
   const t = today();
   getDisplaySchools().forEach(s => ["가", "나"].forEach(g => {
     const el = document.getElementById(`rank_${s}_${g}`);
-    if(el) {
-      let val = el.value.trim();
-      setRec(t, s, g, val);
-    }
+    if(el) setRec(t, s, g, el.value.trim());
   }));
-  save(); alert("클라우드에 안전하게 저장되었습니다.");
+  save(); alert("보안 클라우드에 안심 저장되었습니다.");
 }
 
 function renderHistory() {
@@ -252,9 +272,7 @@ function renderHistory() {
   document.getElementById("historyBox").innerHTML = `<table><thead><tr><th>학교</th><th>가군 등수</th><th>가군 배수</th><th>나군 등수</th><th>나군 배수</th></tr></thead><tbody>${
     schools.map(s => {
       let a = getRec(d, s, "가"), n = getRec(d, s, "나");
-      let aMult = a ? `<span class="badge-mult">${a.multiple} 배</span>` : "—";
-      let nMult = n ? `<span class="badge-mult">${n.multiple} 배</span>` : "—";
-      return `<tr><td><b>${s}</b></td><td>${a?.rank ?? "—"}</td><td>${aMult}</td><td>${n?.rank ?? "—"}</td><td>${nMult}</td></tr>`;
+      return `<tr><td><b>${s}</b></td><td>${a?.rank ?? "—"}</td><td>${a ? `<span class="badge-mult">${a.multiple} 배</span>` : "—"}</td><td>${n?.rank ?? "—"}</td><td>${n ? `<span class="badge-mult">${n.multiple} 배</span>` : "—"}</td></tr>`;
     }).join("")
   }</tbody></table>`;
 }
@@ -269,7 +287,6 @@ function renderChange() {
     if (diff < 0) return `<span class="change-down">↓${Math.abs(diff).toFixed(1)}</span>`;
     return `<span class="change-same">→ 0.0</span>`;
   };
-  
   document.getElementById("changeBox").innerHTML = `<table><thead><tr><th>학교</th><th>가군 현재</th><th>가군 변화</th><th>나군 현재</th><th>나군 변화</th></tr></thead><tbody>${
     schools.map(s => {
       let a = getRec(d, s, "가"), n = getRec(d, s, "나");
@@ -287,8 +304,7 @@ function renderManage() {
   document.getElementById("manageBox").innerHTML = `<table><thead><tr><th>학교</th><th>가군 등수</th><th>나군 등수</th></tr></thead><tbody>${
     schools.map(s => {
       let a = getRec(d, s, "가"), n = getRec(d, s, "나");
-      return `<tr>
-        <td><b>${s}</b></td>
+      return `<tr><td><b>${s}</b></td>
         <td><input id="m_rank_${s}_가" type="number" inputmode="numeric" placeholder="등수" value="${a?.rank ?? ""}"></td>
         <td><input id="m_rank_${s}_나" type="number" inputmode="numeric" placeholder="등수" value="${n?.rank ?? ""}"></td>
       </tr>`;
@@ -298,13 +314,7 @@ function renderManage() {
   document.getElementById("schoolManageBox").innerHTML = `<table><thead><tr><th>학교명</th><th>사용 여부</th></tr></thead><tbody>${
     DEFAULT_SCHOOLS.map(s => {
       let isChecked = activeSchools.includes(s);
-      return `<tr><td><b>${s}</b></td>
-      <td>
-        <label class="checkbox-label">
-          <input type="checkbox" ${isChecked ? "checked" : ""} onchange="toggleSchoolCheckbox('${s}', this.checked)">
-          <span>${isChecked ? "사용 중" : "숨김"}</span>
-        </label>
-      </td></tr>`;
+      return `<tr><td><b>${s}</b></td><td><label class="checkbox-label"><input type="checkbox" ${isChecked ? "checked" : ""} onchange="toggleSchoolCheckbox('${s}', this.checked)"><span>${isChecked ? "사용 중" : "숨김"}</span></label></td></tr>`;
     }).join("")
   }</tbody></table>`;
 }
@@ -313,10 +323,7 @@ function saveManage() {
   const d = document.getElementById("manageDate").value;
   getDisplaySchools().forEach(s => ["가", "나"].forEach(g => {
     const el = document.getElementById(`m_rank_${s}_${g}`);
-    if(el) {
-      let val = el.value.trim();
-      setRec(d, s, g, val, val === "0");
-    }
+    if(el) { let val = el.value.trim(); setRec(d, s, g, val, val === "0"); }
   }));
   save(); alert(`${fmt(d)} 기록이 저장되었습니다.`);
 }
@@ -324,17 +331,13 @@ function saveManage() {
 function deleteDay() {
   const d = document.getElementById("manageDate").value;
   if (confirm(`${fmt(d)}의 모든 입력 데이터를 삭제하시겠습니까?`)) {
-    delete records[d];
-    save(); alert("삭제되었습니다.");
+    delete records[d]; save(); alert("삭제되었습니다.");
   }
 }
 
 function toggleSchoolCheckbox(s, isChecked) {
-  if (isChecked) {
-    if (!activeSchools.includes(s)) activeSchools.push(s);
-  } else {
-    activeSchools = activeSchools.filter(x => x !== s);
-  }
+  if (isChecked) { if (!activeSchools.includes(s)) activeSchools.push(s); }
+  else activeSchools = activeSchools.filter(x => x !== s);
   save();
 }
 
@@ -342,17 +345,7 @@ function drawAllCharts() {
   const container = document.getElementById("allChartsContainer");
   if (!container) return;
   const schools = getDisplaySchools();
-  
-  container.innerHTML = schools.map(s => `
-    <div class="card chart-card">
-      <h3 style="margin:0 0 4px">${s}</h3>
-      <div class="chart-container">
-        <canvas id="canvas_${s}"></canvas>
-        <div id="tooltip_${s}" class="chart-tooltip"></div>
-      </div>
-    </div>
-  `).join("");
-
+  container.innerHTML = schools.map(s => `<div class="card"><h3 style="margin:0 0 4px">${s}</h3><div class="chart-container"><canvas id="canvas_${s}"></canvas><div id="tooltip_${s}" class="chart-tooltip"></div></div></div>`).join("");
   schools.forEach(s => {
     const c = document.getElementById(`canvas_${s}`);
     if (c) {
@@ -361,7 +354,6 @@ function drawAllCharts() {
       c.addEventListener("touchstart", handler, { passive: true });
     }
   });
-
   schools.forEach(s => drawSingleChart(s));
 }
 
@@ -381,8 +373,7 @@ function drawSingleChart(s) {
   const vals = ds.flatMap(d => ["가", "나"].map(g => getRec(d, s, g)?.multiple)).filter(v => v != null);
   if (!vals.length) {
     ctx.fillStyle = "#9ca3af"; ctx.font = "13px sans-serif";
-    ctx.fillText("등록된 배수 기록이 없습니다.", 20, 35);
-    return;
+    ctx.fillText("등록된 배수 기록이 없습니다.", 20, 35); return;
   }
   
   let min = Math.max(0, Math.floor((Math.min(...vals) - 0.2) * 10) / 10);
@@ -400,20 +391,14 @@ function drawSingleChart(s) {
     ctx.fillText((max - (max - min) * i / 4).toFixed(1), 8, yy + 4);
   }
   
-  const series = [
-    { group: "가", color: "#2563eb" },
-    { group: "나", color: "#ea580c" }
-  ];
-  
-  series.forEach(({ group, color }) => {
+  [{ group: "가", color: "#2563eb" }, { group: "나", color: "#ea580c" }].forEach(({ group, color }) => {
     ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
     let started = false;
     ds.forEach((d, i) => {
       let r = getRec(d, s, group);
       if (!r) return;
       let xx = x(i), yy = y(r.multiple);
-      if (!started) { ctx.moveTo(xx, yy); started = true; }
-      else ctx.lineTo(xx, yy);
+      if (!started) { ctx.moveTo(xx, yy); started = true; } else ctx.lineTo(xx, yy);
     });
     ctx.stroke();
     
@@ -428,57 +413,35 @@ function drawSingleChart(s) {
   
   ctx.fillStyle = "#6b7280"; ctx.font = "11px sans-serif";
   ds.forEach((d, i) => {
-    if (ds.length <= 10 || i % Math.ceil(ds.length / 10) === 0) {
-      ctx.fillText(d.slice(5).replace("-", "/"), x(i) - 12, h - 12);
-    }
+    if (ds.length <= 10 || i % Math.ceil(ds.length / 10) === 0) ctx.fillText(d.slice(5).replace("-", "/"), x(i) - 12, h - 12);
   });
-  
-  ctx.fillStyle = "#2563eb"; ctx.fillText("● 가군", w - 90, 20);
-  ctx.fillStyle = "#ea580c"; ctx.fillText("● 나군", w - 50, 20);
 }
 
 function handleChartHover(e, s) {
   const c = document.getElementById(`canvas_${s}`);
   const tooltip = document.getElementById(`tooltip_${s}`);
   if (!c || !tooltip || !chartPointsMap[s]) return;
-  
   const rect = c.getBoundingClientRect();
   const touch = e.touches ? e.touches[0] : e;
-  const mx = touch.clientX - rect.left;
-  const my = touch.clientY - rect.top;
+  const mx = touch.clientX - rect.left, my = touch.clientY - rect.top;
   
-  let found = null;
-  for (let p of chartPointsMap[s]) {
-    let dist = Math.hypot(p.x - mx, p.y - my);
-    if (dist < 15) { found = p; break; }
-  }
-  
+  let found = chartPointsMap[s].find(p => Math.hypot(p.x - mx, p.y - my) < 15);
   if (found) {
     tooltip.style.display = "block";
-    tooltip.style.left = `${found.x}px`;
-    tooltip.style.top = `${found.y}px`;
+    tooltip.style.left = `${found.x}px`; tooltip.style.top = `${found.y}px`;
     tooltip.innerHTML = `<b>${fmt(found.date)} [${found.group}군]</b><br>${found.rank}등 (${found.multiple}배수)`;
-  } else {
-    tooltip.style.display = "none";
-  }
+  } else { tooltip.style.display = "none"; }
 }
 
 function renderRecruit() {
-  const schools = getDisplaySchools();
-  document.getElementById("recruitBody").innerHTML = schools.map(s =>
+  document.getElementById("recruitBody").innerHTML = getDisplaySchools().map(s =>
     `<tr><td><b>${s}</b></td><td>${PICK_MULT[s]}배수</td><td>${RECRUIT[s].가}명</td><td>${RECRUIT[s].나}명</td></tr>`
   ).join("");
 }
 
 function renderAll() {
-  renderInput();
-  renderRecruit();
-  renderHistory();
-  renderChange();
-  renderManage();
-  
-  document.getElementById("allChartsContainer").innerHTML = "";
-  drawAllCharts();
+  renderInput(); renderRecruit(); renderHistory(); renderChange(); renderManage();
+  document.getElementById("allChartsContainer").innerHTML = ""; drawAllCharts();
 }
 
 document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
@@ -491,15 +454,6 @@ document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
 
 document.getElementById("historyDate").value = today();
 document.getElementById("manageDate").value = today();
-
-// 실시간 연동 실행
-initRealtimeSync();
-
-window.addEventListener("resize", () => {
-  if (!document.getElementById("chart").classList.contains("hidden")) {
-    drawAllCharts();
-  }
-});
 </script>
 </body>
 </html>
