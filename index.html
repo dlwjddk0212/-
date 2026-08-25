@@ -3,13 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>로스쿨 배수 기록</title>
+<title>로스쿨 배수 기록 (실시간 연동)</title>
+
+<!-- Firebase SDK 스크립트 불러오기 -->
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;background:#f6f7f9;color:#202124;-webkit-tap-highlight-color:transparent}
 .wrap{max-width:980px;margin:0 auto;padding:24px 16px 50px}
 h1{font-size:26px;margin:0 0 6px}
-.sub{color:#6b7280;margin-bottom:20px;font-size:14px}
+.sub{color:#6b7280;margin-bottom:20px;font-size:14px;display:flex;justify-content:space-between;align-items:center}
 nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px}
 button,.tab{border:0;border-radius:8px;padding:9px 12px;cursor:pointer;font-size:13.5px;background:#e9edf3;font-weight:500;transition:all 0.15s ease}
 .tab.active{background:#202124;color:#fff}
@@ -34,9 +39,10 @@ input[type="date"]{-webkit-appearance:listbox}
 .chart-container{position:relative;width:100%;margin-top:10px}
 canvas{width:100%;height:260px;border:1px solid #eee;border-radius:10px;background:#fff;display:block}
 .chart-tooltip{position:absolute;display:none;padding:6px 10px;background:rgba(17,24,39,0.85);color:#fff;font-size:12px;border-radius:6px;pointer-events:none;white-space:nowrap;z-index:10;transform:translate(-50%,-120%);box-shadow:0 2px 4px rgba(0,0,0,0.2)}
-
 .checkbox-label{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:14px;user-select:none}
 .checkbox-label input[type="checkbox"]{width:18px;height:18px;cursor:pointer;-webkit-appearance:checkbox;appearance:checkbox}
+.sync-status{font-size:12px;padding:4px 8px;border-radius:12px;background:#e5e7eb;color:#374151;font-weight:bold}
+.sync-status.online{background:#dcfce7;color:#15803d}
 
 @media(max-width:650px){
   .wrap{padding:16px 10px}
@@ -49,7 +55,10 @@ canvas{width:100%;height:260px;border:1px solid #eee;border-radius:10px;backgrou
 <body>
 <div class="wrap">
 <h1>로스쿨 배수 기록</h1>
-<div class="sub">오늘 입력 · 날짜별 기록 · 배수 변화 · 그래프</div>
+<div class="sub">
+  <span>오늘 입력 · 날짜별 기록 · 배수 변화 · 그래프</span>
+  <span id="syncStatus" class="sync-status">클라우드 동기화 중...</span>
+</div>
 <nav>
 <button class="tab active" data-tab="input">오늘 입력</button>
 <button class="tab" data-tab="history">기록 조회</button>
@@ -122,40 +131,44 @@ canvas{width:100%;height:260px;border:1px solid #eee;border-radius:10px;backgrou
 </div>
 
 <script>
+// Firebase 키 입력 완료
+const firebaseConfig = {
+  apiKey: "AIzaSyB_bLvYR7VpAtWX4xmnSUyWynEmNjZtquo",
+  authDomain: "lawschool-847c7.firebaseapp.com",
+  projectId: "lawschool-847c7",
+  storageBucket: "lawschool-847c7.firebasestorage.app",
+  messagingSenderId: "220845841979",
+  appId: "1:220845841979:web:4254deed11bfb76963061e"
+};
+
+// Firebase 초기화
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
 const DEFAULT_SCHOOLS = ["원광대","동아대","영남대","부산대","경북대","전남대"];
 const RECRUIT = {원광대:{가:30,나:25},동아대:{가:37,나:37},영남대:{가:32,나:33},부산대:{가:55,나:56},경북대:{가:55,나:56},전남대:{가:51,나:60}};
 const PICK_MULT = {원광대:5,동아대:3,영남대:5,부산대:3,경북대:3,전남대:3};
 
-const KEY_REC = "lawschool_multiple_records_v4";
-const KEY_SCH = "lawschool_active_schools_v4";
-
-let records = loadAndMergeAllRecords();
-let activeSchools = JSON.parse(localStorage.getItem(KEY_SCH) || JSON.stringify(DEFAULT_SCHOOLS));
+let records = {};
+let activeSchools = [...DEFAULT_SCHOOLS];
 let chartPointsMap = {};
 
-function loadAndMergeAllRecords() {
-  let merged = {};
-  const keys = ["lawschool_multiple_records_v1", "lawschool_multiple_records_v2", "lawschool_multiple_records_v3", KEY_REC];
-  keys.forEach(k => {
-    try {
-      let data = localStorage.getItem(k);
-      if (data) {
-        let parsed = JSON.parse(data);
-        for (let d in parsed) {
-          if (!merged[d]) merged[d] = {};
-          for (let s in parsed[d]) {
-            if (!merged[d][s]) merged[d][s] = {};
-            for (let g in parsed[d][s]) {
-              if (parsed[d][s][g] && parsed[d][s][g].rank) {
-                merged[d][s][g] = parsed[d][s][g];
-              }
-            }
-          }
-        }
+// 클라우드 데이터 실시간 동기화
+function initRealtimeSync() {
+  db.collection("lawschool").doc("mainData")
+    .onSnapshot((doc) => {
+      if (doc.exists) {
+        const data = doc.data();
+        records = data.records || {};
+        activeSchools = data.activeSchools || [...DEFAULT_SCHOOLS];
       }
-    } catch(e) {}
-  });
-  return merged;
+      document.getElementById("syncStatus").textContent = "● 클라우드 연동됨";
+      document.getElementById("syncStatus").classList.add("online");
+      renderAll();
+    }, (error) => {
+      console.error("Sync error:", error);
+      document.getElementById("syncStatus").textContent = "연동 실패";
+    });
 }
 
 function getTodayKST() {
@@ -170,17 +183,18 @@ const today = () => getTodayKST();
 const fmt = d => { if(!d) return ""; const [y,m,dd] = d.split("-"); return `${y}.${m}.${dd}`; };
 const round1 = x => Math.round((x + Number.EPSILON) * 10) / 10;
 
+// 클라우드 저장
 function save() {
-  localStorage.setItem(KEY_REC, JSON.stringify(records));
-  localStorage.setItem(KEY_SCH, JSON.stringify(activeSchools));
+  db.collection("lawschool").doc("mainData").set({
+    records: records,
+    activeSchools: activeSchools
+  }, { merge: true });
 }
 
 function getRec(d, s, g) { return records[d]?.[s]?.[g] ?? null; }
 
 function setRec(d, s, g, rankVal, isForceDelete = false) {
-  if (rankVal === "" || rankVal === null || rankVal === undefined) {
-    return; 
-  }
+  if (rankVal === "" || rankVal === null || rankVal === undefined) return;
   
   if (!records[d]) records[d] = {};
   if (!records[d][s]) records[d][s] = {};
@@ -228,7 +242,7 @@ function saveToday() {
       setRec(t, s, g, val);
     }
   }));
-  save(); renderAll(); alert("오늘 기록이 성공적으로 저장되었습니다.");
+  save(); alert("클라우드에 안전하게 저장되었습니다.");
 }
 
 function renderHistory() {
@@ -304,14 +318,14 @@ function saveManage() {
       setRec(d, s, g, val, val === "0");
     }
   }));
-  save(); renderAll(); alert(`${fmt(d)} 기록이 저장되었습니다.`);
+  save(); alert(`${fmt(d)} 기록이 저장되었습니다.`);
 }
 
 function deleteDay() {
   const d = document.getElementById("manageDate").value;
   if (confirm(`${fmt(d)}의 모든 입력 데이터를 삭제하시겠습니까?`)) {
     delete records[d];
-    save(); renderAll(); alert("삭제되었습니다.");
+    save(); alert("삭제되었습니다.");
   }
 }
 
@@ -321,7 +335,7 @@ function toggleSchoolCheckbox(s, isChecked) {
   } else {
     activeSchools = activeSchools.filter(x => x !== s);
   }
-  save(); renderAll();
+  save();
 }
 
 function drawAllCharts() {
@@ -477,8 +491,9 @@ document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
 
 document.getElementById("historyDate").value = today();
 document.getElementById("manageDate").value = today();
-save();
-renderAll();
+
+// 실시간 연동 실행
+initRealtimeSync();
 
 window.addEventListener("resize", () => {
   if (!document.getElementById("chart").classList.contains("hidden")) {
