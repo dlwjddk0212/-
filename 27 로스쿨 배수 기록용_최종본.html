@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>로스쿨 배수 기록</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;background:#f6f7f9;color:#202124;-webkit-tap-highlight-color:transparent}
+.wrap{max-width:980px;margin:0 auto;padding:24px 16px 50px}
+h1{font-size:26px;margin:0 0 6px}
+.sub{color:#6b7280;margin-bottom:20px;font-size:14px}
+nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px}
+button,.tab{border:0;border-radius:8px;padding:9px 12px;cursor:pointer;font-size:13.5px;background:#e9edf3;font-weight:500;transition:all 0.15s ease}
+.tab.active{background:#202124;color:#fff}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,0.02)}
+table{width:100%;border-collapse:collapse}
+th,td{padding:10px 8px;border-bottom:1px solid #eee;text-align:center;font-size:13.5px}
+th:first-child,td:first-child{text-align:left}
+th{font-size:12.5px;color:#6b7280;background:#f9fafb}
+input,select{padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;width:100%;-webkit-appearance:none;appearance:none;background:#fff}
+input[type="date"]{-webkit-appearance:listbox}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.primary{background:#111827;color:#fff}
+.danger{background:#fee2e2;color:#991b1b}
+.btn-sm{padding:6px 10px;font-size:12px;border-radius:6px}
+.muted{color:#9ca3af;font-size:12.5px}
+.hidden{display:none}
+.badge-mult{background:#eff6ff;color:#1d4ed8;font-weight:700;padding:4px 8px;border-radius:6px;display:inline-block;border:1px solid #bfdbfe}
+.change-up{color:#dc2626;font-weight:700}
+.change-down{color:#2563eb;font-weight:700}
+.change-same{color:#6b7280}
+.chart-card{margin-bottom:20px}
+.chart-container{position:relative;width:100%;margin-top:10px}
+canvas{width:100%;height:260px;border:1px solid #eee;border-radius:10px;background:#fff;display:block}
+.chart-tooltip{position:absolute;display:none;padding:6px 10px;background:rgba(17,24,39,0.85);color:#fff;font-size:12px;border-radius:6px;pointer-events:none;white-space:nowrap;z-index:10;transform:translate(-50%,-120%);box-shadow:0 2px 4px rgba(0,0,0,0.2)}
+
+.checkbox-label{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:14px;user-select:none}
+.checkbox-label input[type="checkbox"]{width:18px;height:18px;cursor:pointer;-webkit-appearance:checkbox;appearance:checkbox}
+
+@media(max-width:650px){
+  .wrap{padding:16px 10px}
+  th,td{padding:8px 4px;font-size:12.5px}
+  input{padding:6px;font-size:13px}
+  canvas{height:220px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>로스쿨 배수 기록</h1>
+<div class="sub">오늘 입력 · 날짜별 기록 · 배수 변화 · 그래프</div>
+<nav>
+<button class="tab active" data-tab="input">오늘 입력</button>
+<button class="tab" data-tab="history">기록 조회</button>
+<button class="tab" data-tab="change">배수 변화</button>
+<button class="tab" data-tab="chart">그래프</button>
+<button class="tab" data-tab="manage">기록 관리</button>
+<button class="tab" data-tab="recruit">모집인원</button>
+</nav>
+
+<section id="input" class="section">
+<div class="card">
+  <h2>오늘 입력 (<span id="todayDateLabel"></span>)</h2>
+  <div class="muted" style="margin-bottom:12px">등수만 입력하면 배수는 자동 계산됩니다.</div>
+  <div id="inputRows"></div>
+  <div class="actions"><button class="primary" onclick="saveToday()">전체 저장</button></div>
+</div>
+</section>
+
+<section id="history" class="section hidden">
+<div class="card">
+  <h2>날짜별 기록 조회</h2>
+  <input type="date" id="historyDate" onchange="renderHistory()">
+  <div id="historyBox" style="margin-top:16px"></div>
+</div>
+</section>
+
+<section id="change" class="section hidden">
+<div class="card">
+  <h2>전날 대비 배수 변화</h2>
+  <div id="changeBox" style="margin-top:10px"></div>
+  <p class="muted" style="margin-top:12px">※ 이전 기록 날짜 대비 배수 변화 수치입니다. (↑ : 배수 상승 / ↓ : 배수 하락)</p>
+</div>
+</section>
+
+<section id="chart" class="section hidden">
+<div class="card" style="margin-bottom:16px">
+  <h2>전체 학교 배수 변화 그래프</h2>
+  <div class="muted">사용하도록 체크된 학교의 배수 추이를 한눈에 확인하세요.</div>
+</div>
+<div id="allChartsContainer"></div>
+</section>
+
+<section id="manage" class="section hidden">
+<div class="card">
+  <h2>기록 관리</h2>
+  <div class="muted" style="margin-bottom:10px">조회 및 수정할 날짜를 선택 후 등수를 수정한 뒤 하단의 [전체 저장]을 눌러주세요. 완전히 지우려면 0을 입력하세요.</div>
+  <input type="date" id="manageDate" onchange="renderManage()">
+  <div id="manageBox" style="margin-top:16px"></div>
+  <div class="actions" style="margin-top:16px">
+    <button class="primary" onclick="saveManage()">전체 저장</button>
+    <button class="danger btn-sm" onclick="deleteDay()">이 날짜 전체 기록 삭제</button>
+  </div>
+</div>
+<div class="card" style="margin-top:20px">
+  <h3>사용 학교 선택</h3>
+  <div class="muted" style="margin-bottom:12px">체크를 해제하면 모든 탭에서 해당 학교가 숨겨집니다. (기존 데이터는 삭제되지 않고 안전하게 보존됩니다)</div>
+  <div id="schoolManageBox"></div>
+</div>
+</section>
+
+<section id="recruit" class="section hidden">
+<div class="card">
+  <h2>학교별 모집인원</h2>
+  <table>
+    <thead><tr><th>학교</th><th>선발 배수</th><th>가군</th><th>나군</th></tr></thead>
+    <tbody id="recruitBody"></tbody>
+  </table>
+</div>
+</section>
+</div>
+
+<script>
+const DEFAULT_SCHOOLS = ["원광대","동아대","영남대","부산대","경북대","전남대"];
+const RECRUIT = {원광대:{가:30,나:25},동아대:{가:37,나:37},영남대:{가:32,나:33},부산대:{가:55,나:56},경북대:{가:55,나:56},전남대:{가:51,나:60}};
+const PICK_MULT = {원광대:5,동아대:3,영남대:5,부산대:3,경북대:3,전남대:3};
+
+const KEY_REC = "lawschool_multiple_records_v4";
+const KEY_SCH = "lawschool_active_schools_v4";
+
+let records = loadAndMergeAllRecords();
+let activeSchools = JSON.parse(localStorage.getItem(KEY_SCH) || JSON.stringify(DEFAULT_SCHOOLS));
+let chartPointsMap = {};
+
+function loadAndMergeAllRecords() {
+  let merged = {};
+  const keys = ["lawschool_multiple_records_v1", "lawschool_multiple_records_v2", "lawschool_multiple_records_v3", KEY_REC];
+  keys.forEach(k => {
+    try {
+      let data = localStorage.getItem(k);
+      if (data) {
+        let parsed = JSON.parse(data);
+        for (let d in parsed) {
+          if (!merged[d]) merged[d] = {};
+          for (let s in parsed[d]) {
+            if (!merged[d][s]) merged[d][s] = {};
+            for (let g in parsed[d][s]) {
+              if (parsed[d][s][g] && parsed[d][s][g].rank) {
+                merged[d][s][g] = parsed[d][s][g];
+              }
+            }
+          }
+        }
+      }
+    } catch(e) {}
+  });
+  return merged;
+}
+
+function getTodayKST() {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const date = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${date}`;
+}
+
+const today = () => getTodayKST();
+const fmt = d => { if(!d) return ""; const [y,m,dd] = d.split("-"); return `${y}.${m}.${dd}`; };
+const round1 = x => Math.round((x + Number.EPSILON) * 10) / 10;
+
+function save() {
+  localStorage.setItem(KEY_REC, JSON.stringify(records));
+  localStorage.setItem(KEY_SCH, JSON.stringify(activeSchools));
+}
+
+function getRec(d, s, g) { return records[d]?.[s]?.[g] ?? null; }
+
+function setRec(d, s, g, rankVal, isForceDelete = false) {
+  if (rankVal === "" || rankVal === null || rankVal === undefined) {
+    return; 
+  }
+  
+  if (!records[d]) records[d] = {};
+  if (!records[d][s]) records[d][s] = {};
+  
+  let numVal = Number(rankVal);
+  if (isNaN(numVal) || numVal <= 0 || isForceDelete) {
+    delete records[d][s][g];
+    if (Object.keys(records[d][s]).length === 0) delete records[d][s];
+    if (Object.keys(records[d]).length === 0) delete records[d];
+  } else {
+    records[d][s][g] = { rank: numVal, multiple: round1(numVal / RECRUIT[s][g]) };
+  }
+}
+
+function dates() { return Object.keys(records).sort(); }
+function prevDate(d) {
+  let ds = dates().filter(x => x < d);
+  return ds.length > 0 ? ds[ds.length - 1] : null;
+}
+
+function getDisplaySchools() {
+  return DEFAULT_SCHOOLS.filter(s => activeSchools.includes(s));
+}
+
+function renderInput() {
+  document.getElementById("todayDateLabel").textContent = fmt(today());
+  const schools = getDisplaySchools();
+  document.getElementById("inputRows").innerHTML = `<table><thead><tr><th>학교</th><th>가군 등수</th><th>나군 등수</th><th>모집인원</th></tr></thead><tbody>${
+    schools.map(s => {
+      let a = getRec(today(), s, "가"), n = getRec(today(), s, "나");
+      return `<tr><td><b>${s}</b></td>
+      <td><input id="rank_${s}_가" type="number" inputmode="numeric" min="1" placeholder="등수" value="${a?.rank ?? ""}"></td>
+      <td><input id="rank_${s}_나" type="number" inputmode="numeric" min="1" placeholder="등수" value="${n?.rank ?? ""}"></td>
+      <td class="muted">${RECRUIT[s].가} / ${RECRUIT[s].나}</td></tr>`;
+    }).join("")
+  }</tbody></table>`;
+}
+
+function saveToday() {
+  const t = today();
+  getDisplaySchools().forEach(s => ["가", "나"].forEach(g => {
+    const el = document.getElementById(`rank_${s}_${g}`);
+    if(el) {
+      let val = el.value.trim();
+      setRec(t, s, g, val);
+    }
+  }));
+  save(); renderAll(); alert("오늘 기록이 성공적으로 저장되었습니다.");
+}
+
+function renderHistory() {
+  const d = document.getElementById("historyDate").value || today();
+  document.getElementById("historyDate").value = d;
+  const schools = getDisplaySchools();
+  document.getElementById("historyBox").innerHTML = `<table><thead><tr><th>학교</th><th>가군 등수</th><th>가군 배수</th><th>나군 등수</th><th>나군 배수</th></tr></thead><tbody>${
+    schools.map(s => {
+      let a = getRec(d, s, "가"), n = getRec(d, s, "나");
+      let aMult = a ? `<span class="badge-mult">${a.multiple} 배</span>` : "—";
+      let nMult = n ? `<span class="badge-mult">${n.multiple} 배</span>` : "—";
+      return `<tr><td><b>${s}</b></td><td>${a?.rank ?? "—"}</td><td>${aMult}</td><td>${n?.rank ?? "—"}</td><td>${nMult}</td></tr>`;
+    }).join("")
+  }</tbody></table>`;
+}
+
+function renderChange() {
+  const d = today(), p = prevDate(d);
+  const schools = getDisplaySchools();
+  const cell = (cur, old) => {
+    if (!cur || !old) return "—";
+    let diff = round1(cur.multiple - old.multiple);
+    if (diff > 0) return `<span class="change-up">↑${diff.toFixed(1)}</span>`;
+    if (diff < 0) return `<span class="change-down">↓${Math.abs(diff).toFixed(1)}</span>`;
+    return `<span class="change-same">→ 0.0</span>`;
+  };
+  
+  document.getElementById("changeBox").innerHTML = `<table><thead><tr><th>학교</th><th>가군 현재</th><th>가군 변화</th><th>나군 현재</th><th>나군 변화</th></tr></thead><tbody>${
+    schools.map(s => {
+      let a = getRec(d, s, "가"), n = getRec(d, s, "나");
+      let pa = p ? getRec(p, s, "가") : null, pn = p ? getRec(p, s, "나") : null;
+      return `<tr><td><b>${s}</b></td><td>${a?.multiple ?? "—"}</td><td>${cell(a, pa)}</td><td>${n?.multiple ?? "—"}</td><td>${cell(n, pn)}</td></tr>`;
+    }).join("")
+  }</tbody></table>`;
+}
+
+function renderManage() {
+  const d = document.getElementById("manageDate").value || today();
+  document.getElementById("manageDate").value = d;
+  const schools = getDisplaySchools();
+  
+  document.getElementById("manageBox").innerHTML = `<table><thead><tr><th>학교</th><th>가군 등수</th><th>나군 등수</th></tr></thead><tbody>${
+    schools.map(s => {
+      let a = getRec(d, s, "가"), n = getRec(d, s, "나");
+      return `<tr>
+        <td><b>${s}</b></td>
+        <td><input id="m_rank_${s}_가" type="number" inputmode="numeric" placeholder="등수" value="${a?.rank ?? ""}"></td>
+        <td><input id="m_rank_${s}_나" type="number" inputmode="numeric" placeholder="등수" value="${n?.rank ?? ""}"></td>
+      </tr>`;
+    }).join("")
+  }</tbody></table>`;
+
+  document.getElementById("schoolManageBox").innerHTML = `<table><thead><tr><th>학교명</th><th>사용 여부</th></tr></thead><tbody>${
+    DEFAULT_SCHOOLS.map(s => {
+      let isChecked = activeSchools.includes(s);
+      return `<tr><td><b>${s}</b></td>
+      <td>
+        <label class="checkbox-label">
+          <input type="checkbox" ${isChecked ? "checked" : ""} onchange="toggleSchoolCheckbox('${s}', this.checked)">
+          <span>${isChecked ? "사용 중" : "숨김"}</span>
+        </label>
+      </td></tr>`;
+    }).join("")
+  }</tbody></table>`;
+}
+
+function saveManage() {
+  const d = document.getElementById("manageDate").value;
+  getDisplaySchools().forEach(s => ["가", "나"].forEach(g => {
+    const el = document.getElementById(`m_rank_${s}_${g}`);
+    if(el) {
+      let val = el.value.trim();
+      setRec(d, s, g, val, val === "0");
+    }
+  }));
+  save(); renderAll(); alert(`${fmt(d)} 기록이 저장되었습니다.`);
+}
+
+function deleteDay() {
+  const d = document.getElementById("manageDate").value;
+  if (confirm(`${fmt(d)}의 모든 입력 데이터를 삭제하시겠습니까?`)) {
+    delete records[d];
+    save(); renderAll(); alert("삭제되었습니다.");
+  }
+}
+
+function toggleSchoolCheckbox(s, isChecked) {
+  if (isChecked) {
+    if (!activeSchools.includes(s)) activeSchools.push(s);
+  } else {
+    activeSchools = activeSchools.filter(x => x !== s);
+  }
+  save(); renderAll();
+}
+
+function drawAllCharts() {
+  const container = document.getElementById("allChartsContainer");
+  if (!container) return;
+  const schools = getDisplaySchools();
+  
+  container.innerHTML = schools.map(s => `
+    <div class="card chart-card">
+      <h3 style="margin:0 0 4px">${s}</h3>
+      <div class="chart-container">
+        <canvas id="canvas_${s}"></canvas>
+        <div id="tooltip_${s}" class="chart-tooltip"></div>
+      </div>
+    </div>
+  `).join("");
+
+  schools.forEach(s => {
+    const c = document.getElementById(`canvas_${s}`);
+    if (c) {
+      const handler = e => handleChartHover(e, s);
+      c.addEventListener("mousemove", handler);
+      c.addEventListener("touchstart", handler, { passive: true });
+    }
+  });
+
+  schools.forEach(s => drawSingleChart(s));
+}
+
+function drawSingleChart(s) {
+  const c = document.getElementById(`canvas_${s}`);
+  if (!c) return;
+  const ctx = c.getContext("2d");
+  const ds = dates();
+  const pad = 40, w = c.clientWidth, h = c.clientHeight || 260;
+  
+  c.width = w * (window.devicePixelRatio || 1);
+  c.height = h * (window.devicePixelRatio || 1);
+  ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+  ctx.clearRect(0, 0, w, h);
+  chartPointsMap[s] = [];
+  
+  const vals = ds.flatMap(d => ["가", "나"].map(g => getRec(d, s, g)?.multiple)).filter(v => v != null);
+  if (!vals.length) {
+    ctx.fillStyle = "#9ca3af"; ctx.font = "13px sans-serif";
+    ctx.fillText("등록된 배수 기록이 없습니다.", 20, 35);
+    return;
+  }
+  
+  let min = Math.max(0, Math.floor((Math.min(...vals) - 0.2) * 10) / 10);
+  let max = Math.ceil((Math.max(...vals) + 0.2) * 10) / 10;
+  if (max <= min) max = min + 1;
+  
+  const x = i => pad + (ds.length === 1 ? (w - 2 * pad) / 2 : i * (w - 2 * pad) / (ds.length - 1));
+  const y = v => h - pad - (v - min) / (max - min) * (h - 2 * pad);
+  
+  ctx.strokeStyle = "#f3f4f6"; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    let yy = pad + i * (h - 2 * pad) / 4;
+    ctx.beginPath(); ctx.moveTo(pad, yy); ctx.lineTo(w - pad, yy); ctx.stroke();
+    ctx.fillStyle = "#9ca3af"; ctx.font = "11px sans-serif";
+    ctx.fillText((max - (max - min) * i / 4).toFixed(1), 8, yy + 4);
+  }
+  
+  const series = [
+    { group: "가", color: "#2563eb" },
+    { group: "나", color: "#ea580c" }
+  ];
+  
+  series.forEach(({ group, color }) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+    let started = false;
+    ds.forEach((d, i) => {
+      let r = getRec(d, s, group);
+      if (!r) return;
+      let xx = x(i), yy = y(r.multiple);
+      if (!started) { ctx.moveTo(xx, yy); started = true; }
+      else ctx.lineTo(xx, yy);
+    });
+    ctx.stroke();
+    
+    ds.forEach((d, i) => {
+      let r = getRec(d, s, group);
+      if (!r) return;
+      let xx = x(i), yy = y(r.multiple);
+      ctx.fillStyle = color; ctx.beginPath(); ctx.arc(xx, yy, 4.5, 0, Math.PI * 2); ctx.fill();
+      chartPointsMap[s].push({ x: xx, y: yy, date: d, group, rank: r.rank, multiple: r.multiple });
+    });
+  });
+  
+  ctx.fillStyle = "#6b7280"; ctx.font = "11px sans-serif";
+  ds.forEach((d, i) => {
+    if (ds.length <= 10 || i % Math.ceil(ds.length / 10) === 0) {
+      ctx.fillText(d.slice(5).replace("-", "/"), x(i) - 12, h - 12);
+    }
+  });
+  
+  ctx.fillStyle = "#2563eb"; ctx.fillText("● 가군", w - 90, 20);
+  ctx.fillStyle = "#ea580c"; ctx.fillText("● 나군", w - 50, 20);
+}
+
+function handleChartHover(e, s) {
+  const c = document.getElementById(`canvas_${s}`);
+  const tooltip = document.getElementById(`tooltip_${s}`);
+  if (!c || !tooltip || !chartPointsMap[s]) return;
+  
+  const rect = c.getBoundingClientRect();
+  const touch = e.touches ? e.touches[0] : e;
+  const mx = touch.clientX - rect.left;
+  const my = touch.clientY - rect.top;
+  
+  let found = null;
+  for (let p of chartPointsMap[s]) {
+    let dist = Math.hypot(p.x - mx, p.y - my);
+    if (dist < 15) { found = p; break; }
+  }
+  
+  if (found) {
+    tooltip.style.display = "block";
+    tooltip.style.left = `${found.x}px`;
+    tooltip.style.top = `${found.y}px`;
+    tooltip.innerHTML = `<b>${fmt(found.date)} [${found.group}군]</b><br>${found.rank}등 (${found.multiple}배수)`;
+  } else {
+    tooltip.style.display = "none";
+  }
+}
+
+function renderRecruit() {
+  const schools = getDisplaySchools();
+  document.getElementById("recruitBody").innerHTML = schools.map(s =>
+    `<tr><td><b>${s}</b></td><td>${PICK_MULT[s]}배수</td><td>${RECRUIT[s].가}명</td><td>${RECRUIT[s].나}명</td></tr>`
+  ).join("");
+}
+
+function renderAll() {
+  renderInput();
+  renderRecruit();
+  renderHistory();
+  renderChange();
+  renderManage();
+  
+  document.getElementById("allChartsContainer").innerHTML = "";
+  drawAllCharts();
+}
+
+document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+  b.classList.add("active");
+  document.querySelectorAll(".section").forEach(x => x.classList.add("hidden"));
+  document.getElementById(b.dataset.tab).classList.remove("hidden");
+  renderAll();
+});
+
+document.getElementById("historyDate").value = today();
+document.getElementById("manageDate").value = today();
+save();
+renderAll();
+
+window.addEventListener("resize", () => {
+  if (!document.getElementById("chart").classList.contains("hidden")) {
+    drawAllCharts();
+  }
+});
+</script>
+</body>
+</html>
